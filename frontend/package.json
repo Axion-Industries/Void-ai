@@ -20,7 +20,7 @@
     "devDependencies": {
         "@vitejs/plugin-react": "^4.2.1",
         "typescript": "^5.2.2",
-        "vite": "^5.0.8",
+        "vite": "^6.3.5",
         "postcss": "^8.4.38",
         "eslint": "^8.57.0",
         "prettier": "^3.2.5",
