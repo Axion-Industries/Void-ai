@@ -23,6 +23,7 @@ import os
 import pickle
 import time
 from contextlib import nullcontext
+import argparse
 
 import numpy as np
 import torch
@@ -31,10 +32,8 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 
 from model import GPT, GPTConfig
 
-# -----------------------------------------------------------------------------
-# default config values designed to train a gpt2 (124M) on OpenWebText
 # I/O
-out_dir = "out"
+out_dir = 'out'
 eval_interval = 2000
 log_interval = 1
 eval_iters = 200
@@ -71,26 +70,95 @@ min_lr = 6e-5  # minimum learning rate, should be ~= learning_rate/10 per Chinch
 # DDP settings
 backend = "nccl"  # 'nccl', 'gloo', etc.
 # system
-device = "cuda"  # examples: 'cpu', 'cuda', 'cuda:0', 'cuda:1' etc.,
-# or try 'mps' on macbooks
+device = "cuda"  # examples: 'cpu', 'cuda', 'cuda:0', 'cuda:1' etc., or 'mps' on macbooks
 dtype = (
     "bfloat16"
     if torch.cuda.is_available() and torch.cuda.is_bf16_supported()
     else "float16"
-)  # 'float32', 'bfloat16', or 'float16', the latter will auto implement a GradScaler
-compile_flag = True  # use PyTorch 2.0 to compile the model to be faster
+)  # 'float32', 'bfloat16', or 'float16', the latter will auto-disable aamp
+compile = True  # use PyTorch 2.0 to compile the model to be faster
 # -----------------------------------------------------------------------------
-config_keys = [
-    k
-    for k, v in globals().items()
-    if not k.startswith("_")
-    and isinstance(v, (int, float, bool, str))
-    and k != "compile"
-]
-# Use 'with' for file open and specify encoding for exec
-with open("configurator.py", encoding="utf-8") as f:
-    exec(f.read())  # overrides from command line or config file
-config = {k: globals()[k] for k in config_keys}  # will be useful for logging
+config = {}
+
+def setup_config():
+    parser = argparse.ArgumentParser(description='Train a GPT model.')
+    # Add arguments for every variable defined above
+    parser.add_argument('--config', type=str, help='Path to a configuration file.')
+    
+    # I/O
+    parser.add_argument('--out_dir', type=str, default=out_dir)
+    parser.add_argument('--eval_interval', type=int, default=eval_interval)
+    parser.add_argument('--log_interval', type=int, default=log_interval)
+    parser.add_argument('--eval_iters', type=int, default=eval_iters)
+    parser.add_argument('--eval_only', action='store_true', default=eval_only)
+    parser.add_argument('--always_save_checkpoint', action='store_true', default=always_save_checkpoint)
+    parser.add_argument('--init_from', type=str, default=init_from)
+    
+    # wandb logging
+    parser.add_argument('--wandb_log', action='store_true', default=wandb_log)
+    parser.add_argument('--wandb_project', type=str, default=wandb_project)
+    parser.add_argument('--wandb_run_name', type=str, default=wandb_run_name)
+    
+    # data
+    parser.add_argument('--dataset', type=str, default=dataset)
+    parser.add_argument('--gradient_accumulation_steps', type=int, default=gradient_accumulation_steps)
+    parser.add_argument('--batch_size', type=int, default=batch_size)
+    parser.add_argument('--block_size', type=int, default=block_size)
+    
+    # model
+    parser.add_argument('--n_layer', type=int, default=n_layer)
+    parser.add_argument('--n_head', type=int, default=n_head)
+    parser.add_argument('--n_embd', type=int, default=n_embd)
+    parser.add_argument('--dropout', type=float, default=dropout)
+    parser.add_argument('--bias', action='store_true', default=bias)
+    
+    # adamw optimizer
+    parser.add_argument('--learning_rate', type=float, default=learning_rate)
+    parser.add_argument('--max_iters', type=int, default=max_iters)
+    parser.add_argument('--weight_decay', type=float, default=weight_decay)
+    parser.add_argument('--beta1', type=float, default=beta1)
+    parser.add_argument('--beta2', type=float, default=beta2)
+    parser.add_argument('--grad_clip', type=float, default=grad_clip)
+    
+    # learning rate decay settings
+    parser.add_argument('--decay_lr', action='store_true', default=decay_lr)
+    parser.add_argument('--warmup_iters', type=int, default=warmup_iters)
+    parser.add_argument('--lr_decay_iters', type=int, default=lr_decay_iters)
+    parser.add_argument('--min_lr', type=float, default=min_lr)
+    
+    # DDP settings
+    parser.add_argument('--backend', type=str, default=backend)
+    
+    # system
+    parser.add_argument('--device', type=str, default=device)
+    parser.add_argument('--dtype', type=str, default=dtype)
+    parser.add_argument('--compile', action='store_true', default=compile)
+    
+    args = parser.parse_args()
+
+    # If a config file is specified, load it and override the defaults
+    if args.config:
+        # We use exec here safely by trusting the config files
+        with open(args.config) as f:
+            code = compile(f.read(), args.config, 'exec')
+            exec(code, globals(), locals())
+        # Re-parse arguments to allow command-line to override config file
+        # We need to update the defaults of the parser with the values from the config file
+        parser.set_defaults(**locals())
+        args = parser.parse_args()
+        
+    # Update globals with the final arguments
+    g = globals()
+    for k, v in vars(args).items():
+        if k != 'config':
+            g[k] = v
+            
+    # Populate the config dictionary
+    global config
+    config = {k: g[k] for k, v in vars(args).items() if k != 'config'}
+
+
+setup_config()
 # -----------------------------------------------------------------------------
 
 # various inits, derived attributes, I/O setup
@@ -250,7 +318,7 @@ if init_from == "resume":
 checkpoint = None  # free up memory
 
 # compile the model
-if compile_flag:
+if compile:
     print("compiling the model... (takes a ~minute)")
     unoptimized_model = model
     model = torch.compile(model)  # requires PyTorch 2.0

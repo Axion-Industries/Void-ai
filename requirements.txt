@@ -1,5 +1,12 @@
-flask==3.0.3
-numpy==1.26.4
-torch==2.5.1
+Flask
+torch>=2.6.0
+numpy
+# For AI Memory and Database
+supabase
+sentence-transformers
+psycopg2-binary
+rich
+python-dotenv
+flask_cors
 gunicorn==21.2.0
 werkzeug==3.0.1

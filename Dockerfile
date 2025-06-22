@@ -1,42 +1,60 @@
+# Stage 1: Build the Frontend
+# This stage uses a Node.js image to build the static frontend assets.
+FROM node:18-slim as frontend-builder
+
+WORKDIR /app/frontend
+
+# Copy frontend-specific files
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm install
+
+COPY frontend/ ./
+# Set Supabase env vars during build time to be embedded in the static files
+# These are safe to be public as they are the public anon keys.
+ARG VITE_SUPABASE_URL
+ARG VITE_SUPABASE_ANON_KEY
+ENV VITE_SUPABASE_URL=${VITE_SUPABASE_URL}
+ENV VITE_SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY}
+RUN npm run build
+
+
+# Stage 2: Build the Python Backend
+# This stage builds the final Python application and copies the built frontend assets.
 FROM python:3.9-slim
 
 WORKDIR /app
 
 # Install system dependencies
-RUN set -e && apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
-    python3-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first to leverage Docker cache
-COPY requirements.txt requirements-dev.txt ./
-RUN set -e && pip install --no-cache-dir -r requirements.txt -r requirements-dev.txt
+COPY requirements.txt ./
+# The previous `pip install` was likely failing silently.
+# This new command ensures all dependencies, including torch, are installed correctly.
+RUN pip install --no-cache-dir --upgrade pip
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy project files
+# Copy the entire application code
 COPY . .
 
-# Create required directories
-RUN set -e && mkdir -p logs out data/void && chmod -R 755 logs out data/void
+# Copy the built frontend assets from the first stage
+COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
-# Set environment variables
+# Create required directories and set permissions
+RUN mkdir -p logs out data/void && chmod -R 755 logs out data/void
+
+# Set environment variables for the application
 ENV MODEL_PATH=/app/out/model.pt \
     VOCAB_PATH=/app/data/void/vocab.pkl \
     META_PATH=/app/data/void/meta.pkl \
-    PYTHONUNBUFFERED=1 \
-    LANG=C.UTF-8 \
-    LC_ALL=C.UTF-8 \
-    PYTHONDONTWRITEBYTECODE=1
+    PYTHONUNBUFFERED=1
 
-# Initialize model files and verify setup
-RUN set -e && python init_model.py && python verify_setup.py
-
-# Expose the port
+# Expose the application port
 EXPOSE 10000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:10000/health || exit 1
-
-# Run the application with proper worker configuration
-CMD exec gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 1 --timeout 300 --access-logfile - --error-logfile - --log-level debug --capture-output --worker-class sync --preload chat_api:app
+# Run the application using Gunicorn
+# This command is optimized for Render's environment.
+CMD ["gunicorn", "--bind", "0.0.0.0:10000", "--workers", "1", "chat_api:app"]

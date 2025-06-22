@@ -50,9 +50,16 @@ htmlcov/
 .env.local
 .env.*.local
 
+# User data and credentials
+users.json
+data/input.txt
+
 # Docker
 .docker/
 
 # System Files
 .DS_Store
 Thumbs.db
+
+# Deployment artifacts
+render deployements/

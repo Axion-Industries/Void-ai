@@ -3,6 +3,11 @@ services:
     name: void-z1
     runtime: docker
     plan: free
-    envVars: []
     healthCheckPath: /health
     autoDeploy: true
+    # Docker build arguments and runtime environment variables
+    # will be pulled from the 'supabase-credentials' Env Group.
+    envVars:
+      - fromGroup: supabase-credentials
+      - key: PYTHON_VERSION
+        value: 3.9 # Matching the Dockerfile

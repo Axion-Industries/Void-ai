@@ -3,12 +3,12 @@ import time
 out_dir = 'out-shakespeare'
 eval_interval = 5
 eval_iters = 40
-wandb_log = False # feel free to turn on
+wandb_log = False  # feel free to turn on
 wandb_project = 'shakespeare'
 wandb_run_name = 'ft-' + str(time.time())
 
 dataset = 'shakespeare'
-init_from = 'gpt2-xl' # this is the largest GPT-2 model
+init_from = 'gpt2-xl'  # this is the largest GPT-2 model
 
 # only save checkpoints if the validation loss improves
 always_save_checkpoint = False
@@ -21,5 +21,7 @@ gradient_accumulation_steps = 32
 max_iters = 20
 
 # finetune at constant LR
-learning_rate = 3e-5
+learning_rate = 3e-4  # max learning rate
 decay_lr = False
+
+block_size = 256  # context of up to 256 previous characters

@@ -1,6 +1,5 @@
 import torch
 import pickle
-import numpy as np
 from model import GPTConfig, GPT
 
 # Load the vocabulary and meta information
@@ -17,16 +16,22 @@ with open('data/input.txt', 'r', encoding='utf-8') as f:
 data = torch.tensor([stoi[c] for c in text], dtype=torch.long)
 
 # Train/val split
-n = int(0.9*len(data))
+n = int(0.9 * len(data))
 train_data = data[:n]
 val_data = data[n:]
 
+
 def get_batch(split):
-    data = train_data if split == 'train' else val_data
-    ix = torch.randint(len(data) - meta['block_size'], (32,))
-    x = torch.stack([data[i:i+meta['block_size']] for i in ix])
-    y = torch.stack([data[i+1:i+1+meta['block_size']] for i in ix])
+    data_ = train_data if split == 'train' else val_data
+    ix = torch.randint(len(data_) - meta['block_size'], (32,))
+    x = torch.stack([
+        data_[i:i + meta['block_size']] for i in ix
+    ])
+    y = torch.stack([
+        data_[i + 1:i + 1 + meta['block_size']] for i in ix
+    ])
     return x, y
+
 
 # Create the model
 print("Initializing model...")
@@ -48,7 +53,6 @@ print("Starting training...")
 for iter in range(max_iters):
     if iter % 100 == 0:
         print(f"iteration {iter}/{max_iters}")
-    
     xb, yb = get_batch('train')
     logits, loss = model(xb, yb)
     optimizer.zero_grad(set_to_none=True)

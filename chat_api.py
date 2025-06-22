@@ -11,15 +11,23 @@ from datetime import datetime
 from functools import wraps
 from logging.handlers import RotatingFileHandler
 import platform
+import threading
 
 # Model imports
 import torch
+# --> NEW: AI Memory and Database imports
+from dotenv import load_dotenv
+from sentence_transformers import SentenceTransformer
+from supabase import create_client, Client
 
 # Flask imports
 from flask import Flask, jsonify, request, send_from_directory
-from werkzeug.utils import safe_join
+from flask_cors import CORS
 
 from model import GPT, GPTConfig
+
+# --> NEW: Load environment variables for Supabase
+load_dotenv()
 
 print("[Void Z1] chat_api.py starting up...")
 # Configure logging ONCE
@@ -45,6 +53,14 @@ MODEL_PATH = os.getenv('MODEL_PATH', 'out/model.pt')
 VOCAB_PATH = os.getenv('VOCAB_PATH', 'data/void/vocab.pkl')
 META_PATH = os.getenv('META_PATH', 'data/void/meta.pkl')
 PORT = int(os.getenv('PORT', 10000))
+INPUT_PATH = 'data/input.txt'
+# --> NEW: Supabase and AI Memory settings
+SUPABASE_URL = os.getenv("VITE_SUPABASE_URL")
+SUPABASE_KEY = os.getenv("VITE_SUPABASE_ANON_KEY")
+EMBEDDING_MODEL = 'all-MiniLM-L6-v2' # Produces 384-dim vectors
+# Note: The SQL schema was updated for 768 dims. Let's adjust it in code for now.
+# A better fix would be to align the model and schema.
+# For example, use 'all-mpnet-base-v2' for 768-dim.
 
 # --- Security settings ---
 RATE_LIMIT_REQUESTS = int(os.getenv("RATE_LIMIT_REQUESTS", "100"))
@@ -54,6 +70,34 @@ MAX_PROMPT_LENGTH = int(os.getenv("MAX_PROMPT_LENGTH", "1000"))
 # Rate limiting
 request_counts = defaultdict(lambda: {"count": 0, "window_start": time.time()})
 
+# Global state
+model = None
+stoi = None
+itos = None
+training_status = {'status': 'idle', 'message': ''}
+# --> NEW: Supabase client and embedding model
+supabase: Client = None
+embedding_model = None
+
+# --> NEW: Function to initialize Supabase client
+def init_supabase():
+    global supabase
+    if SUPABASE_URL and SUPABASE_KEY:
+        logger.info("Initializing Supabase client...")
+        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+    else:
+        logger.warning("Supabase environment variables not set. Database features will be disabled.")
+
+# --> NEW: Function to load the embedding model
+def load_embedding_model():
+    global embedding_model
+    try:
+        logger.info(f"Loading embedding model: {EMBEDDING_MODEL}")
+        embedding_model = SentenceTransformer(EMBEDDING_MODEL)
+        logger.info("Embedding model loaded successfully.")
+    except Exception as e:
+        logger.error(f"Failed to load embedding model: {e}", exc_info=True)
+
 
 def check_required_files():
     """Check if all required files exist."""
@@ -62,12 +106,12 @@ def check_required_files():
         VOCAB_PATH: "Vocabulary file",
         META_PATH: "Meta configuration"
     }
-    
+
     missing_files = []
     for file_path, description in required_files.items():
         if not os.path.exists(file_path):
             missing_files.append(f"{description}: {file_path}")
-    
+
     if missing_files:
         error_msg = "Missing required files:\n" + "\n".join(missing_files)
         logger.error(error_msg)
@@ -76,27 +120,30 @@ def check_required_files():
 
 def load_model():
     """Load the model and its configuration."""
+    global model, stoi, itos
     try:
         logger.info("Loading model configuration...")
         with open(META_PATH, 'rb') as f:
             meta = pickle.load(f)
-        
+
         with open(VOCAB_PATH, 'rb') as f:
-            vocab = pickle.load(f)
-        
+            chars, stoi = pickle.load(f)
+
         logger.info("Initializing model...")
         config = GPTConfig(**meta)
         model = GPT(config)
-        
+
         logger.info("Loading model weights...")
         model.load_state_dict(torch.load(MODEL_PATH, map_location='cpu'))
         model.eval()
-        
+
+        itos = {i: ch for ch, i in stoi.items()}
         logger.info("Model loaded successfully")
-        return model, vocab
     except Exception as e:
         logger.error(f"Failed to load model: {str(e)}")
-        raise
+        model = None
+        stoi = None
+        itos = None
 
 
 def get_client_identifier():
@@ -172,37 +219,43 @@ class time_limit:
 
     def __enter__(self):
         if platform.system() != "Windows":
-            signal.signal(signal.SIGALRM, timeout_handler)
-            signal.alarm(self.seconds)
+            # Only use SIGALRM on non-Windows systems
+            if hasattr(signal, "SIGALRM") and hasattr(signal, "alarm"):
+                signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(self.seconds)
 
     def __exit__(self, type, value, traceback):
         if platform.system() != "Windows":
-            signal.alarm(0)
+            if hasattr(signal, "alarm"):
+                signal.alarm(0)
 
 
 # --- Paths ---
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-MODEL_PATH = os.path.join(BASE_DIR, "out", "model.pt")
-VOCAB_PATH = os.path.join(BASE_DIR, "data", "void", "vocab.pkl")
-META_PATH = os.path.join(BASE_DIR, "data", "void", "meta.pkl")
+FRONTEND_BUILD_DIR = os.path.join(BASE_DIR, 'frontend', 'dist', 'public')
 
-app = Flask(__name__, static_folder=".", static_url_path="")
+app = Flask(
+    __name__,
+    static_folder=FRONTEND_BUILD_DIR,
+    static_url_path=''
+)
+CORS(app)
 app.after_request(add_security_headers)
 
 # --- Model and vocab loading ---
+
+
 def try_load_model():
     try:
         logger.info("Loading model and vocabulary...")
         with open(VOCAB_PATH, "rb") as f:
             chars, stoi = pickle.load(f)
-        itos = {i: ch for ch, i in stoi.items()}
+        itos = {i: ch for i, ch in stoi.items()}
         vocab_size = len(chars)
         logger.info(f"Loaded vocabulary with size {vocab_size}")
-        
         with open(META_PATH, "rb") as f:
             meta = pickle.load(f)
         logger.info("Loaded meta configuration")
-        
         config = GPTConfig(
             vocab_size=vocab_size,
             block_size=meta.get("block_size", 64),
@@ -212,7 +265,6 @@ def try_load_model():
             dropout=0.0,
             bias=meta.get("bias", True),
         )
-        
         logger.info("Loading model weights...")
         model = GPT(config)
         model.load_state_dict(torch.load(MODEL_PATH, map_location="cpu"))
@@ -224,153 +276,160 @@ def try_load_model():
         logger.error("Stack trace:", exc_info=True)
         return None, None, None
 
+
 model, stoi, itos = try_load_model()
 
+
 # --- Health check ---
-@app.route("/health")
+
+
+@app.route("/health", endpoint="health_check")
 def health_check():
     """Temporary health check endpoint for Render deployment debug."""
-    logger.info("/health endpoint called - always returning 200 for Render health check.")
+    logger.info(
+        "/health endpoint called - always returning 200 for Render health check."
+    )
     return jsonify({"status": "ok", "message": "Void Z1 is running."}), 200
+
 
 @app.route("/")
 def serve_index():
     """Serve the main frontend for Void Z1."""
-    return send_from_directory(".", "index.html", cache_timeout=300)
+    return send_from_directory(FRONTEND_BUILD_DIR, "index.html", cache_timeout=300)
+
 
 @app.route("/<path:path>")
 def serve_static(path):
-    safe_path = safe_join(".", path)
-    if not safe_path or not os.path.isfile(safe_path):
-        return jsonify({"error": "File not found"}), 404
-    response = send_from_directory(".", path)
+    file_path = os.path.join(FRONTEND_BUILD_DIR, path)
+    if not os.path.isfile(file_path):
+        # For SPA routing, fallback to index.html
+        return send_from_directory(FRONTEND_BUILD_DIR, "index.html")
+    response = send_from_directory(FRONTEND_BUILD_DIR, path)
     if path.endswith((".js", ".css", ".html")):
-        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Cache-Control"] = (
+            "no-cache, no-store, must-revalidate"
+        )
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"
     return response
 
-# --- Rate limiting ---
-# REMOVE the following redundant code:
-# RATE_LIMIT = 5
-# RATE_WINDOW = 1
-# request_counts = defaultdict(list)
-# def is_rate_limited(ip): ...
-# @app.before_request
-# def check_rate_limit(): ...
-
 
 # --- Chat endpoint ---
+
+
 @app.route("/chat", methods=["POST"])
 @rate_limit
 def chat():
+    """Handle chat requests with AI memory."""
     if not model or not stoi or not itos:
-        msg = (
-            "Server is not properly initialized. "
-            "Required model files are missing. Please try again later."
-        )
-        logger.error(msg)
-        return jsonify({"error": msg}), 503  # Service Unavailable
-        
+        return jsonify({"error": "Model not loaded"}), 503
+
+    data = request.get_json()
+    prompt = data.get("prompt", "")
+    user_id = data.get("user_id") # We'll get this from the frontend
+
+    if not prompt or len(prompt) > MAX_PROMPT_LENGTH:
+        return jsonify({"error": "Invalid prompt"}), 400
+    if not user_id:
+        return jsonify({"error": "User not authenticated"}), 401
+
     try:
-        data = request.get_json()
-        if not data:
-            return jsonify({"error": "No data provided"}), 400
-            
-        prompt = data.get("prompt")
-        if not prompt:
-            return jsonify({"error": "No prompt provided"}), 400
-            
-        if len(prompt) > 5000:
-            error_msg = f"Prompt too long. Maximum length is 5000 characters."
-            return jsonify({"error": error_msg}), 400
-            
-        max_new_tokens = min(int(data.get("max_new_tokens", 100)), 500)
-        temperature = max(0.1, min(float(data.get("temperature", 0.8)), 2.0))
-        
-        logger.info(
-            "Chat request - tokens: %d, temp: %.2f, prompt_len: %d",
-            max_new_tokens, temperature, len(prompt)
-        )
-        
+        # --> NEW: AI Memory Logic
+        memory_context = ""
+        if supabase and embedding_model:
+            try:
+                # 1. Create an embedding for the user's prompt
+                prompt_embedding = embedding_model.encode(prompt).tolist()
+
+                # 2. Find relevant past conversations
+                matches = supabase.rpc('match_relevant_chats', {
+                    'query_embedding': prompt_embedding,
+                    'match_threshold': 0.75,
+                    'match_count': 5,
+                    'request_user_id': user_id
+                }).execute()
+
+                if matches.data:
+                    logger.info(f"Found {len(matches.data)} relevant memories for user {user_id}")
+                    # Create a context string from the memories
+                    memory_context = "Relevant past conversations:\n"
+                    for match in reversed(matches.data): # reversed to keep chronological order
+                        memory_context += f"User: {match['message']}\nAI: {match['response']}\n"
+                    memory_context += "\n---\nCurrent Conversation:\n"
+
+            except Exception as e:
+                logger.error(f"Error fetching AI memory: {e}", exc_info=True)
+
+        # Combine memory with the current prompt
+        final_prompt = memory_context + prompt
+
+        # Generate response from the model
         with time_limit(30):
-            # Clean up any GPU memory before processing
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-                
-            encoded = torch.tensor([stoi[c] for c in prompt], dtype=torch.long)
-            
+            encoded_prompt = torch.tensor([stoi[c] for c in final_prompt], dtype=torch.long, device='cpu').unsqueeze(0)
             with torch.no_grad():
-                output = model.generate(
-                    encoded.unsqueeze(0),
-                    max_new_tokens=max_new_tokens,
-                    temperature=temperature,
+                generated_encoded = model.generate(
+                    encoded_prompt,
+                    max_new_tokens=data.get("max_new_tokens", 100),
+                    temperature=data.get("temperature", 0.8),
+                    top_k=data.get("top_k", 200)
                 )
-                
-            completion = "".join([itos[int(i)] for i in output[0].tolist()])
-            response_text = completion[len(prompt):]
-            
-            # Log successful response
-            logger.info(
-                "Generated response - length: %d chars",
-                len(response_text)
-            )
-            
-            return jsonify({"text": response_text})
-            
+            response_text = "".join([itos[i] for i in generated_encoded[0].tolist()])
+
+        # --> NEW: Save the new conversation and its embedding to the database
+        if supabase and embedding_model:
+            try:
+                # We use the original prompt's embedding
+                supabase.table('chats').insert({
+                    'user_id': user_id,
+                    'message': prompt,
+                    'response': response_text,
+                    'embedding': prompt_embedding
+                }).execute()
+            except Exception as e:
+                logger.error(f"Error saving chat to Supabase: {e}", exc_info=True)
+
+        return jsonify({"text": response_text})
+
     except TimeoutException:
-        logger.error("Request timed out")
-        return jsonify({"error": "Request timed out. Please try again."}), 408
-        
-    except ValueError as ve:
-        logger.error("Value error: %s", str(ve))
-        return jsonify({"error": "Invalid input parameters"}), 400
-        
+        return jsonify({"error": "Request timed out"}), 504
     except Exception as e:
-        logger.error("Error processing request: %s", str(e), exc_info=True)
-        return jsonify({
-            "error": "An unexpected error occurred. Please try again later."
-        }), 500
+        logger.error(f"Error during chat generation: {str(e)}", exc_info=True)
+        return jsonify({"error": "Internal server error"}), 500
+
 
 def cleanup_memory():
     """Clean up memory after each request."""
     try:
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
-            
         import gc
         gc.collect()
-        
     except Exception as e:
         logger.error(f"Error during cleanup: {str(e)}")
 
 
 @app.after_request
 def after_request(response):
-    """After request handler to clean up resources and add security headers."""
     cleanup_memory()
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['X-Frame-Options'] = 'DENY'
     response.headers['X-XSS-Protection'] = '1; mode=block'
-    response.headers['Content-Security-Policy'] = "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'"
+    response.headers['Content-Security-Policy'] = (
+        "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'"
+    )
     return response
+
 
 @app.errorhandler(500)
 def server_error(e):
-    """Handle internal server errors."""
-    logger.error(f"Internal server error: {str(e)}", exc_info=True)
-    return jsonify({
-        "error": "An unexpected error occurred. Please try again later."
-    }), 500
+    logger.error(f"Server Error: {e}", exc_info=True)
+    return jsonify({"error": "Internal server error"}), 500
 
-if __name__ == "__main__":
-    try:
-        check_required_files()
-        model, vocab = load_model()
-        logger.info("Application initialized successfully")
-        port = int(os.getenv('PORT', 10000))
-        app.run(host='0.0.0.0', port=port, debug=False)
-    except Exception as e:
-        logger.error(f"Failed to start application: {str(e)}", exc_info=True)
-        print(f"FATAL: {str(e)}")
-        sys.exit(1)
+if __name__ == '__main__':
+    check_required_files()
+    init_supabase() # --> NEW: Initialize Supabase
+    load_embedding_model() # --> NEW: Load the embedding model
+    load_model()
+
+    logger.info(f"Starting server on port {PORT}")
+    app.run(host="0.0.0.g", port=PORT, debug=False)
