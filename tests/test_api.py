@@ -1,10 +1,12 @@
-import json
+import sys
 import os
 import pickle
+import json
 
 import pytest
 import torch
 
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from chat_api import app
 
 

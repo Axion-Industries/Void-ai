@@ -292,10 +292,22 @@ def health_check():
     return jsonify({"status": "ok", "message": "Void Z1 is running."}), 200
 
 
+@app.route("/train", methods=["POST"])
+def train():
+    data = request.get_json()
+    text = data.get("text", "")
+    user_id = data.get("user_id", None)
+    if not text:
+        return jsonify({"error": "No training text provided."}), 400
+    # Simulate training (no-op for dummy model)
+    logger.info(f"Received training text from user {user_id}: {text[:50]}...")
+    return jsonify({"status": "ok", "message": "Training started (simulated)."})
+
+
 @app.route("/")
 def serve_index():
     """Serve the main frontend for Void Z1."""
-    return send_from_directory(FRONTEND_BUILD_DIR, "index.html", cache_timeout=300)
+    return send_from_directory(FRONTEND_BUILD_DIR, "index.html")
 
 
 @app.route("/<path:path>")
@@ -322,7 +334,9 @@ def serve_static(path):
 def chat():
     """Handle chat requests with AI memory."""
     if not model or not stoi or not itos:
-        return jsonify({"error": "Model not loaded"}), 503
+        # Dummy response if model is not loaded
+        logger.warning("Model not loaded, returning dummy response.")
+        return jsonify({"text": "[AI is not trained yet. Please train the model with your own data.]"})
 
     data = request.get_json()
     prompt = data.get("prompt", "")
@@ -388,7 +402,7 @@ def chat():
             except Exception as e:
                 logger.error(f"Error saving chat to Supabase: {e}", exc_info=True)
 
-        return jsonify({"text": response_text})
+            return jsonify({"text": response_text})
 
     except TimeoutException:
         return jsonify({"error": "Request timed out"}), 504
@@ -432,4 +446,4 @@ if __name__ == '__main__':
     load_model()
 
     logger.info(f"Starting server on port {PORT}")
-    app.run(host="0.0.0.g", port=PORT, debug=False)
+    app.run(host="0.0.0.0", port=PORT, debug=False)
