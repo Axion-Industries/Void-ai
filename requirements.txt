@@ -7,4 +7,4 @@ rich
 python-dotenv
 flask_cors
 gunicorn==21.2.0
-werkzeug==3.0.1
+werkzeug==3.1.3
