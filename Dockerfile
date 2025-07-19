@@ -46,6 +46,8 @@ COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 # Create required directories and set permissions
 RUN mkdir -p logs out data/void && chmod -R 755 logs out data/void
 
+# Model files are committed, nothing to do here
+
 # Set environment variables for the application
 ENV MODEL_PATH=/app/out/model.pt \
     VOCAB_PATH=/app/data/void/vocab.pkl \
@@ -56,5 +58,5 @@ ENV MODEL_PATH=/app/out/model.pt \
 EXPOSE 10000
 
 # Run the application using Gunicorn
-# This command is optimized for Render's environment.
-CMD ["gunicorn", "--bind", "0.0.0.0:10000", "--workers", "1", "chat_api:app"]
+# Use the PORT environment variable if set, otherwise default to 10000
+CMD exec gunicorn --bind 0.0.0.0:${PORT:-10000} --workers 1 chat_api:app
