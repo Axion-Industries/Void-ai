@@ -94,3 +94,45 @@ $$ language 'plpgsql';
 CREATE TRIGGER update_training_sessions_updated_at
     BEFORE UPDATE ON public.training_sessions
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+-- Add embedding column to chats table if not exists
+ALTER TABLE public.chats ADD COLUMN IF NOT EXISTS embedding float8[];
+
+-- Template for match_relevant_chats function (Postgres, for vector similarity search)
+-- You must have the pgvector extension enabled in your Supabase instance for this to work.
+-- This function finds the most relevant chats for a given embedding and user.
+
+-- Enable pgvector extension if not already enabled
+CREATE EXTENSION IF NOT EXISTS vector;
+
+CREATE OR REPLACE FUNCTION public.match_relevant_chats(
+    query_embedding float8[],
+    match_threshold float8,
+    match_count integer,
+    request_user_id uuid
+)
+RETURNS TABLE(
+    id uuid,
+    user_id uuid,
+    message text,
+    response text,
+    embedding float8[],
+    similarity float8
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        c.id,
+        c.user_id,
+        c.message,
+        c.response,
+        c.embedding,
+        (1 - (c.embedding <=> query_embedding)) AS similarity
+    FROM public.chats c
+    WHERE c.user_id = request_user_id
+      AND c.embedding IS NOT NULL
+      AND (1 - (c.embedding <=> query_embedding)) > match_threshold
+    ORDER BY similarity DESC
+    LIMIT match_count;
+END;
+$$ LANGUAGE plpgsql;

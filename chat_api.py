@@ -53,6 +53,19 @@ VOCAB_PATH = os.getenv('VOCAB_PATH', 'data/void/vocab.pkl')
 META_PATH = os.getenv('META_PATH', 'data/void/meta.pkl')
 PORT = int(os.getenv('PORT', 10000))
 INPUT_PATH = 'data/input.txt'
+
+# Fast failure for missing required files
+for required_file, description in [
+    (MODEL_PATH, 'Model weights'),
+    (VOCAB_PATH, 'Vocabulary file'),
+    (META_PATH, 'Meta configuration')
+]:
+    if not os.path.exists(required_file):
+        print(f"[FATAL] Missing required file: {description} at {required_file}")
+        import sys
+        sys.exit(1)
+
+
 # --> NEW: Supabase and AI Memory settings
 SUPABASE_URL = os.getenv("VITE_SUPABASE_URL")
 SUPABASE_KEY = os.getenv("VITE_SUPABASE_ANON_KEY")
@@ -79,13 +92,18 @@ supabase: Client = None
 embedding_model = None
 
 # --> NEW: Function to initialize Supabase client
+
+
 def init_supabase():
     global supabase
     if SUPABASE_URL and SUPABASE_KEY:
         logger.info("Initializing Supabase client...")
         supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
     else:
-        logger.warning("Supabase environment variables not set. Database features will be disabled.")
+        logger.warning(
+            "Supabase environment variables not set. "
+            "Database features will be disabled."
+        )
 
 # --> NEW: Function to load the embedding model
 def load_embedding_model():
@@ -405,7 +423,16 @@ def chat():
                     'embedding': prompt_embedding
                 }).execute()
             except Exception as e:
-                logger.error(f"Error saving chat to Supabase: {e}", exc_info=True)
+                logger.error(
+                    f"Error saving chat to Supabase: {e}", exc_info=True
+                )
+                if 'embedding' in str(e):
+                    return jsonify({
+                        "error": (
+                            "Database is missing the 'embedding' column. "
+                            "Please update your schema."
+                        )
+                    }), 500
 
             return jsonify({"text": response_text})
 
@@ -444,11 +471,70 @@ def server_error(e):
     return jsonify({"error": "Internal server error"}), 500
 
 
+# --- Utility to check Supabase function existence ---
+def check_supabase_function_exists():
+    if not supabase:
+        return False
+    try:
+        # Try a dry run of the function with dummy data
+        dummy_embedding = [0.0] * 384
+        result = supabase.rpc('match_relevant_chats', {
+            'query_embedding': dummy_embedding,
+            'match_threshold': 0.0,
+            'match_count': 1,
+            'request_user_id': (
+                '00000000-0000-0000-0000-000000000000'
+            )
+        }).execute()
+        if hasattr(result, 'status_code') and result.status_code == 404:
+            logger.warning(
+                "Supabase function 'match_relevant_chats' does not exist or "
+                "is not accessible."
+            )
+            return False
+        return True
+    except Exception as e:
+        logger.warning(
+            f"Supabase function 'match_relevant_chats' check failed: {e}"
+        )
+        return False
+
+
+def check_embedding_column():
+    if not supabase:
+        return False
+    try:
+        # Try to insert a dummy row with embedding, rollback immediately
+        from uuid import uuid4
+        dummy_id = str(uuid4())
+        dummy = {
+            'id': dummy_id,
+            'user_id': '00000000-0000-0000-0000-000000000000',
+            'message': 'test',
+            'response': 'test',
+            'embedding': [0.0] * 384
+        }
+        # Use upsert to avoid duplicate errors, and delete after
+        supabase.table('chats').upsert(dummy).execute()
+        supabase.table('chats').delete().eq('id', dummy_id).execute()
+        return True
+    except Exception as e:
+        logger.error(
+            "Supabase 'chats' table is missing the 'embedding' column or it "
+            "is misconfigured: %s",
+            e
+        )
+        return False
+
+
 if __name__ == '__main__':
     check_required_files()
     init_supabase()  # --> NEW: Initialize Supabase
     load_embedding_model()  # --> NEW: Load the embedding model
     load_model()
-
+    # Check for match_relevant_chats function
+    if supabase:
+        check_supabase_function_exists()
+        check_embedding_column()
     logger.info(f"Starting server on port {PORT}")
     app.run(host="0.0.0.0", port=PORT, debug=False)
