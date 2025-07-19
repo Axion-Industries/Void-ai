@@ -11,7 +11,6 @@ from datetime import datetime
 from functools import wraps
 from logging.handlers import RotatingFileHandler
 import platform
-import threading
 
 # Model imports
 import torch
@@ -57,7 +56,7 @@ INPUT_PATH = 'data/input.txt'
 # --> NEW: Supabase and AI Memory settings
 SUPABASE_URL = os.getenv("VITE_SUPABASE_URL")
 SUPABASE_KEY = os.getenv("VITE_SUPABASE_ANON_KEY")
-EMBEDDING_MODEL = 'all-MiniLM-L6-v2' # Produces 384-dim vectors
+EMBEDDING_MODEL = 'all-MiniLM-L6-v2'  # Produces 384-dim vectors
 # Note: The SQL schema was updated for 768 dims. Let's adjust it in code for now.
 # A better fix would be to align the model and schema.
 # For example, use 'all-mpnet-base-v2' for 768-dim.
@@ -335,12 +334,16 @@ def chat():
     """Handle chat requests with AI memory."""
     if not model or not stoi or not itos:
         # Dummy response if model is not loaded
-        logger.warning("Model not loaded, returning dummy response.")
-        return jsonify({"text": "[AI is not trained yet. Please train the model with your own data.]"})
+        logger.warning(
+            "Model not loaded, returning dummy response."
+        )
+        return jsonify({
+            "text": "[AI is not trained yet. Please train the model with your own data.]"
+        })
 
     data = request.get_json()
     prompt = data.get("prompt", "")
-    user_id = data.get("user_id") # We'll get this from the frontend
+    user_id = data.get("user_id")  # We'll get this from the frontend
 
     if not prompt or len(prompt) > MAX_PROMPT_LENGTH:
         return jsonify({"error": "Invalid prompt"}), 400
@@ -367,7 +370,7 @@ def chat():
                     logger.info(f"Found {len(matches.data)} relevant memories for user {user_id}")
                     # Create a context string from the memories
                     memory_context = "Relevant past conversations:\n"
-                    for match in reversed(matches.data): # reversed to keep chronological order
+                    for match in reversed(matches.data):  # reversed to keep chronological order
                         memory_context += f"User: {match['message']}\nAI: {match['response']}\n"
                     memory_context += "\n---\nCurrent Conversation:\n"
 
@@ -379,7 +382,9 @@ def chat():
 
         # Generate response from the model
         with time_limit(30):
-            encoded_prompt = torch.tensor([stoi[c] for c in final_prompt], dtype=torch.long, device='cpu').unsqueeze(0)
+            encoded_prompt = torch.tensor([
+                stoi[c] for c in final_prompt
+            ], dtype=torch.long, device='cpu').unsqueeze(0)
             with torch.no_grad():
                 generated_encoded = model.generate(
                     encoded_prompt,
@@ -434,15 +439,15 @@ def after_request(response):
     return response
 
 
-@app.errorhandler(500)
 def server_error(e):
     logger.error(f"Server Error: {e}", exc_info=True)
     return jsonify({"error": "Internal server error"}), 500
 
+
 if __name__ == '__main__':
     check_required_files()
-    init_supabase() # --> NEW: Initialize Supabase
-    load_embedding_model() # --> NEW: Load the embedding model
+    init_supabase()  # --> NEW: Initialize Supabase
+    load_embedding_model()  # --> NEW: Load the embedding model
     load_model()
 
     logger.info(f"Starting server on port {PORT}")
