@@ -16,7 +16,8 @@ import platform
 import torch
 # --> NEW: AI Memory and Database imports
 from dotenv import load_dotenv
-from sentence_transformers import SentenceTransformer
+# Remove or comment out SentenceTransformer and embedding model imports
+# from sentence_transformers import SentenceTransformer
 from supabase import create_client, Client
 
 # Flask imports
@@ -108,12 +109,8 @@ def init_supabase():
 # --> NEW: Function to load the embedding model
 def load_embedding_model():
     global embedding_model
-    try:
-        logger.info(f"Loading embedding model: {EMBEDDING_MODEL}")
-        embedding_model = SentenceTransformer(EMBEDDING_MODEL)
-        logger.info("Embedding model loaded successfully.")
-    except Exception as e:
-        logger.error(f"Failed to load embedding model: {e}", exc_info=True)
+    embedding_model = None
+    logger.info("Embedding model loading is disabled for low-memory deployment.")
 
 
 def check_required_files():
@@ -371,29 +368,30 @@ def chat():
     try:
         # --> NEW: AI Memory Logic
         memory_context = ""
-        if supabase and embedding_model:
-            try:
-                # 1. Create an embedding for the user's prompt
-                prompt_embedding = embedding_model.encode(prompt).tolist()
+        # Remove or comment out embedding model usage
+        # if supabase and embedding_model:
+        #     try:
+        #         # 1. Create an embedding for the user's prompt
+        #         prompt_embedding = embedding_model.encode(prompt).tolist()
 
-                # 2. Find relevant past conversations
-                matches = supabase.rpc('match_relevant_chats', {
-                    'query_embedding': prompt_embedding,
-                    'match_threshold': 0.75,
-                    'match_count': 5,
-                    'request_user_id': user_id
-                }).execute()
+        #         # 2. Find relevant past conversations
+        #         matches = supabase.rpc('match_relevant_chats', {
+        #             'query_embedding': prompt_embedding,
+        #             'match_threshold': 0.75,
+        #             'match_count': 5,
+        #             'request_user_id': user_id
+        #         }).execute()
 
-                if matches.data:
-                    logger.info(f"Found {len(matches.data)} relevant memories for user {user_id}")
-                    # Create a context string from the memories
-                    memory_context = "Relevant past conversations:\n"
-                    for match in reversed(matches.data):  # reversed to keep chronological order
-                        memory_context += f"User: {match['message']}\nAI: {match['response']}\n"
-                    memory_context += "\n---\nCurrent Conversation:\n"
+        #         if matches.data:
+        #             logger.info(f"Found {len(matches.data)} relevant memories for user {user_id}")
+        #             # Create a context string from the memories
+        #             memory_context = "Relevant past conversations:\n"
+        #             for match in reversed(matches.data):  # reversed to keep chronological order
+        #                 memory_context += f"User: {match['message']}\nAI: {match['response']}\n"
+        #             memory_context += "\n---\nCurrent Conversation:\n"
 
-            except Exception as e:
-                logger.error(f"Error fetching AI memory: {e}", exc_info=True)
+        #     except Exception as e:
+        #         logger.error(f"Error fetching AI memory: {e}", exc_info=True)
 
         # Combine memory with the current prompt
         final_prompt = memory_context + prompt
@@ -410,31 +408,33 @@ def chat():
                     temperature=data.get("temperature", 0.8),
                     top_k=data.get("top_k", 200)
                 )
-            response_text = "".join([itos[i] for i in generated_encoded[0].tolist()])
+            response_text = "".join([
+                itos[i] for i in generated_encoded[0].tolist()
+            ])
 
         # --> NEW: Save the new conversation and its embedding to the database
-        if supabase and embedding_model:
-            try:
-                # We use the original prompt's embedding
-                supabase.table('chats').insert({
-                    'user_id': user_id,
-                    'message': prompt,
-                    'response': response_text,
-                    'embedding': prompt_embedding
-                }).execute()
-            except Exception as e:
-                logger.error(
-                    f"Error saving chat to Supabase: {e}", exc_info=True
-                )
-                if 'embedding' in str(e):
-                    return jsonify({
-                        "error": (
-                            "Database is missing the 'embedding' column. "
-                            "Please update your schema."
-                        )
-                    }), 500
+        # if supabase and embedding_model:
+        #     try:
+        #         # We use the original prompt's embedding
+        #         supabase.table('chats').insert({
+        #             'user_id': user_id,
+        #             'message': prompt,
+        #             'response': response_text,
+        #             'embedding': prompt_embedding
+        #         }).execute()
+        #     except Exception as e:
+        #         logger.error(
+        #             f"Error saving chat to Supabase: {e}", exc_info=True
+        #         )
+        #         if 'embedding' in str(e):
+        #             return jsonify({
+        #                 "error": (
+        #                     "Database is missing the 'embedding' column. "
+        #                     "Please update your schema."
+        #                 )
+        #             }), 500
 
-            return jsonify({"text": response_text})
+        return jsonify({"text": response_text})
 
     except TimeoutException:
         return jsonify({"error": "Request timed out"}), 504
@@ -477,21 +477,21 @@ def check_supabase_function_exists():
         return False
     try:
         # Try a dry run of the function with dummy data
-        dummy_embedding = [0.0] * 384
-        result = supabase.rpc('match_relevant_chats', {
-            'query_embedding': dummy_embedding,
-            'match_threshold': 0.0,
-            'match_count': 1,
-            'request_user_id': (
-                '00000000-0000-0000-0000-000000000000'
-            )
-        }).execute()
-        if hasattr(result, 'status_code') and result.status_code == 404:
-            logger.warning(
-                "Supabase function 'match_relevant_chats' does not exist or "
-                "is not accessible."
-            )
-            return False
+        # dummy_embedding = [0.0] * 384
+        # result = supabase.rpc('match_relevant_chats', {
+        #     'query_embedding': dummy_embedding,
+        #     'match_threshold': 0.0,
+        #     'match_count': 1,
+        #     'request_user_id': (
+        #         '00000000-0000-0000-0000-000000000000'
+        #     )
+        # }).execute()
+        # if hasattr(result, 'status_code') and result.status_code == 404:
+        #     logger.warning(
+        #         "Supabase function 'match_relevant_chats' does not exist or "
+        #         "is not accessible."
+        #     )
+        #     return False
         return True
     except Exception as e:
         logger.warning(

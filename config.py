@@ -21,7 +21,7 @@ PORT = int(os.getenv("PORT", 10000))
 DEBUG = os.getenv("DEBUG", "False").lower() == "true"
 
 # Logging
-LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+LOG_LEVEL = os.getenv("LOG_LEVEL", "WARNING")
 LOGGING_CONFIG = {
     "version": 1,
     "disable_existing_loggers": False,

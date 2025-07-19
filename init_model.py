@@ -10,7 +10,7 @@ def init_model_files():
     os.makedirs("data/void", exist_ok=True)
 
     # Create a minimal vocabulary
-    chars = [chr(i) for i in range(32, 127)]  # Basic ASCII characters
+    chars = [chr(i) for i in range(32, 96)]  # 64 basic ASCII characters
     stoi = {ch: i for i, ch in enumerate(chars)}
     vocab_size = len(chars)
 
@@ -20,10 +20,10 @@ def init_model_files():
 
     # Create meta configuration
     meta = {
-        "block_size": 64,
-        "n_layer": 4,
-        "n_head": 4,
-        "n_embd": 128,
+        "block_size": 32,
+        "n_layer": 2,
+        "n_head": 2,
+        "n_embd": 64,
         "bias": True,
         "vocab_size": vocab_size
     }
