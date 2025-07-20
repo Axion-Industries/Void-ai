@@ -1,5 +1,5 @@
 git config --global user.email "axion.industries.ai@gmail.com"
 git config --global user.name "Axion Industries"
 git add .
-git commit -m "404 Fixes"
+git commit -m "Made a small sample model, fix ed chat_api.py errors."
 git push origin main
