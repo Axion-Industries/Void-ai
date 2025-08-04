@@ -30,10 +30,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
+
 # Copy requirements first to leverage Docker cache
 COPY requirements.txt ./
-# The previous `pip install` was likely failing silently.
-# This new command ensures all dependencies, including torch, are installed correctly.
 RUN pip install --no-cache-dir --upgrade pip
 RUN pip install --no-cache-dir -r requirements.txt
 
@@ -46,7 +45,9 @@ COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 # Create required directories and set permissions
 RUN mkdir -p logs out data/void && chmod -R 755 logs out data/void
 
-# Model files are committed, nothing to do here
+# Run model setup and verification at build time
+RUN python3 setup_model.py || exit 1
+RUN python3 verify_setup.py || exit 1
 
 # Set environment variables for the application
 ENV MODEL_PATH=/app/out/model.pt \
@@ -58,5 +59,4 @@ ENV MODEL_PATH=/app/out/model.pt \
 EXPOSE 10000
 
 # Run the application using Gunicorn
-# Use the PORT environment variable if set, otherwise default to 10000
 CMD exec gunicorn --bind 0.0.0.0:${PORT:-10000} --workers 1 chat_api:app
