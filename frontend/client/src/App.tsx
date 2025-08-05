@@ -168,7 +168,7 @@ const App: React.FC = () => {
 
   if (loading) {
     return (
-      <div style={{
+      <div className="fade-in" style={{
         display: 'flex',
         justifyContent: 'center',
         alignItems: 'center',
@@ -182,23 +182,24 @@ const App: React.FC = () => {
 
   if (!user) {
     return (
-      <div style={{ fontFamily: "sans-serif", background: "#f7f7fa", minHeight: "100vh" }}>
+      <div className="fade-in" style={{ fontFamily: "sans-serif", background: "#f7f7fa", minHeight: "100vh" }}>
         <header style={{ background: "#222", color: "#fff", padding: "1rem", textAlign: "center" }}>
           <h1>Void AI Chat & Trainer</h1>
         </header>
-        <Auth onAuthSuccess={() => {}} />
+        <Auth onAuthSuccess={() => { }} />
       </div>
     );
   }
 
   return (
-    <div style={{ fontFamily: "sans-serif", background: "#f7f7fa", minHeight: "100vh" }}>
+    <div className="fade-in" style={{ fontFamily: "sans-serif", background: "#f7f7fa", minHeight: "100vh" }}>
       <header style={{ background: "#222", color: "#fff", padding: "1rem", textAlign: "center", position: "relative" }}>
         <h1>Void AI Chat & Trainer</h1>
         <div style={{ position: "absolute", top: "1rem", right: "1rem" }}>
           <span style={{ marginRight: "1rem" }}>Welcome, {profile?.username || user.email}</span>
           <button
             onClick={handleSignOut}
+            className="button-animate"
             style={{
               padding: "4px 8px",
               borderRadius: 4,
@@ -213,14 +214,14 @@ const App: React.FC = () => {
           </button>
         </div>
       </header>
-      <main style={{ maxWidth: 700, margin: "2rem auto", background: "#fff", borderRadius: 8, boxShadow: "0 2px 8px #0001", padding: 24 }}>
+      <main className="card-animate" style={{ maxWidth: 700, margin: "2rem auto", background: "#fff", borderRadius: 8, boxShadow: "0 2px 8px #0001", padding: 24 }}>
         {/* Chat Section */}
         <section>
           <h2>Chat</h2>
           <div style={{ minHeight: 200, maxHeight: 300, overflowY: "auto", background: "#f3f3f7", borderRadius: 6, padding: 12, marginBottom: 12, border: "1px solid #eee" }}>
             {chatHistory.length === 0 && <div style={{ color: "#888" }}>No messages yet.</div>}
             {chatHistory.map((msg, i) => (
-              <div key={i} style={{ marginBottom: 10 }}>
+              <div key={i} style={{ marginBottom: 10 }} className="fade-in">
                 <div style={{ fontWeight: 600, color: "#333" }}>You:</div>
                 <div style={{ marginBottom: 4 }}>{msg.user}</div>
                 <div style={{ fontWeight: 600, color: "#4b0082" }}>Void AI:</div>
@@ -239,10 +240,12 @@ const App: React.FC = () => {
               placeholder="Type your message..."
               style={{ flex: 1, padding: 8, borderRadius: 4, border: "1px solid #ccc" }}
               disabled={chatLoading}
+              className="fade-in"
             />
             <button
               onClick={handleSendChat}
               disabled={chatLoading || !chatInput.trim()}
+              className="button-animate"
               style={{ padding: "8px 16px", borderRadius: 4, background: "#4b0082", color: "#fff", border: 0, fontWeight: 600, cursor: chatLoading ? "not-allowed" : "pointer" }}
             >
               {chatLoading ? "..." : "Send"}
@@ -260,11 +263,13 @@ const App: React.FC = () => {
             rows={4}
             style={{ width: "100%", padding: 8, borderRadius: 4, border: "1px solid #ccc", marginBottom: 8 }}
             disabled={trainLoading}
+            className="fade-in"
           />
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <button
               onClick={handleTrain}
               disabled={trainLoading || !trainText.trim()}
+              className="button-animate"
               style={{ padding: "8px 16px", borderRadius: 4, background: "#00824b", color: "#fff", border: 0, fontWeight: 600, cursor: trainLoading ? "not-allowed" : "pointer" }}
             >
               {trainLoading ? "Training..." : "Train"}

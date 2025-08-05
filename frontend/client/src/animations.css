@@ -1,0 +1,33 @@
+.fade-in {
+    animation: fadeIn 0.7s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+.button-animate {
+    transition: background 0.2s, transform 0.15s;
+}
+
+.button-animate:hover {
+    background: #6a1b9a;
+    transform: translateY(-2px) scale(1.04);
+}
+
+.card-animate {
+    transition: box-shadow 0.2s, transform 0.2s;
+}
+
+.card-animate:hover {
+    box-shadow: 0 4px 24px #4b008233;
+    transform: translateY(-4px) scale(1.01);
+}

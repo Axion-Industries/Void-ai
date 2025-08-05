@@ -47,7 +47,7 @@ export const Auth: React.FC<AuthProps> = ({ onAuthSuccess }) => {
   }
 
   return (
-    <div style={{
+    <div className="fade-in" style={{
       maxWidth: 400,
       margin: '4rem auto',
       background: '#fff',
@@ -71,7 +71,7 @@ export const Auth: React.FC<AuthProps> = ({ onAuthSuccess }) => {
         </div>
       )}
 
-      <form onSubmit={handleAuth}>
+      <form onSubmit={handleAuth} className="card-animate">
         {!isLogin && (
           <div style={{ marginBottom: 16 }}>
             <label style={{ display: 'block', marginBottom: 4, color: '#333' }}>
@@ -90,6 +90,7 @@ export const Auth: React.FC<AuthProps> = ({ onAuthSuccess }) => {
                 border: '1px solid #ccc',
                 fontSize: 14
               }}
+              className="fade-in"
             />
           </div>
         )}
@@ -110,6 +111,7 @@ export const Auth: React.FC<AuthProps> = ({ onAuthSuccess }) => {
               border: '1px solid #ccc',
               fontSize: 14
             }}
+            className="fade-in"
           />
         </div>
 
@@ -130,25 +132,27 @@ export const Auth: React.FC<AuthProps> = ({ onAuthSuccess }) => {
               border: '1px solid #ccc',
               fontSize: 14
             }}
+            className="fade-in"
           />
-        </div>
-
-        <button
-          type="submit"
-          disabled={loading}
-          style={{
-            width: '100%',
-            padding: 12,
-            borderRadius: 4,
-            background: '#4b0082',
-            color: '#fff',
-            border: 0,
-            fontWeight: 600,
-            cursor: loading ? 'not-allowed' : 'pointer',
-            fontSize: 14
-          }}
-        >
-          {loading ? 'Loading...' : (isLogin ? 'Sign In' : 'Sign Up')}
+          <button
+            type="submit"
+            disabled={loading}
+            className="button-animate"
+            style={{
+              width: '100%',
+              padding: 12,
+              borderRadius: 4,
+              background: '#4b0082',
+              color: '#fff',
+              border: 0,
+              fontWeight: 600,
+              fontSize: 16,
+              cursor: loading ? 'not-allowed' : 'pointer',
+              marginTop: 8
+            }}
+          >
+            {loading ? (isLogin ? 'Signing In...' : 'Signing Up...') : (isLogin ? 'Sign In' : 'Sign Up')}
+          </button>
         </button>
       </form>
 
